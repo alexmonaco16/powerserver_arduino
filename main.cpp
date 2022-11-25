@@ -2,30 +2,35 @@
 #include <Ethernet.h>
 #include <EthernetUdp.h>
 
+// identificativo univoco del sensore
+#define sensor_id 0;
+
 // Numero di campioni fra cui determinare il picco della tensione alternata
 #define campioni 30
-// Potenza minima misurabile (in Watt)
+// Soglia di potenza minima misurabile (in Watt)
 #define watt_minimi 25
-// Tensione di riferimento
-#define tensione_rif 220 // V
+// Tensione di riferimento (220V in Italia)
+#define tensione_rif 220
 
 // AHServer
-// Server IP address = 93.48.49.218
+// indirizzo IP del server = 93.48.49.218
 IPAddress server_ip(93, 48, 49, 218);
-// Server port = 16000
+// porto del server = 16000
 int port = 16000;
 
+// definizione socket UDP
 EthernetUDP Udp;
 
-// Arduino's MAC address
+// MAC address del sensore IoT
 byte mac[] = {
         0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
 };
 
-// Arduino's IP address
+// indirizzo IP (locale) del sensore IoT
 IPAddress ip(192, 168, 0, 177);
 
-// variabili della parte di CSD
+
+// variabili del progetto di CSD
 int current_code;
 double volt;
 double volt_max;
@@ -34,7 +39,6 @@ double volt_cal_avg = 0.0;
 double power;
 int watt_min = watt_minimi;
 
-#define sensor_id 0;
 
 // struct che verrà inviata nel pacchetto
 typedef struct {
@@ -44,14 +48,16 @@ typedef struct {
 
 
 void setup() {
+    // Inizializzazione interfaccia Ethernet
     Ethernet.init(5);
 
-    // Open serial communications and wait for port to open:
+    // DEBUG: apertura comunicazione seriale
     Serial.begin(9600);
     while (!Serial) {
-        ; // wait for serial port to connect. Needed for native USB port only
+        ;
     }
 
+    // DEBUG
     Serial.println("CSD Arduino porting with Ethernet");
 
     // start the Ethernet connection:
@@ -68,8 +74,10 @@ void setup() {
         Serial.println("Ethernet cable not connected \n");
     }
 
+    // Inizio comunicazione UDP sul porto 16000
     Udp.begin(16000);
 
+    // DEBUG
     Serial.println("\nAVVIO CALIBRAZIONE");
 
     // 10 fasi di calibrazione del sensore
@@ -92,6 +100,7 @@ void setup() {
         // Media pesata fra i risultati delle differenti fasi di calibrazione
         volt_cal_avg = volt_rms + volt_cal_avg;
 
+        // DEBUG
         Serial.print((String) "CALIBRAZIONE " + i + ": ");
         Serial.print(volt_rms, 8);
         Serial.print(" Volt \n");
@@ -100,6 +109,7 @@ void setup() {
         if(i != 1)
             volt_cal_avg = volt_cal_avg / 2;
 
+        // DEBUG
         Serial.print("Media pesata  : ");
         Serial.print(volt_cal_avg, 8);
         Serial.print(" Volt\n\n");
@@ -107,6 +117,7 @@ void setup() {
         delay(1000);
     }
 
+    // DEBUG
     Serial.print("----------------------------------------\n\n");
 }
 
@@ -137,15 +148,20 @@ void loop() {
     if(power < 0)
         power = -power;
 
+    // DEBUG
     Serial.print(volt_rms, 8);
     Serial.print(" deltaV | ");
 
     if (power>watt_min) {
         // la potenza misurata è superiore alla soglia minima di rumore
+        // DEBUG
         Serial.print(power, 8);
         Serial.print(" WATT\n");
     } else {
-        // è inferiore
+        // la potenza misurata è inferiore alla soglia minima di rumore
+        // pertanto, la azzero
+        power = 0;
+        // DEBUG
         Serial.print("minore di ");
         Serial.print(watt_min, DEC);
         Serial.print(" WATT (");
@@ -153,10 +169,12 @@ void loop() {
         Serial.print(" WATT)\n");
     }
 
+    // incapsulo l'id del sensore e la misurazione di consumo in un pacchetto
     Pacchetto p;
     p.id = sensor_id;
     p.power = round(power);
 
+    // invio via rete il pacchetto al server remoto
     Udp.beginPacket(server_ip, port);
     Udp.write((byte *)&p, sizeof(p)); // da risolvere
     Udp.endPacket();
